@@ -1,0 +1,63 @@
+import pandas as pd
+import numpy as np
+
+np.random.seed(42)
+n = 500
+
+device_types = ["mobile", "laptop", "iot", "guest", "tv", "server"]
+df = pd.DataFrame({
+    "device_type": np.random.choice(device_types, size=n),
+    "session_hours": np.random.exponential(scale=4, size=n).round(2),
+    "login_freq_per_day": np.random.poisson(2, n),
+})
+
+# Lease time logic by device
+def assign_lease(row):
+    base = {
+        "mobile": np.random.uniform(4, 12),
+        "laptop": np.random.uniform(8, 24),
+        "iot": np.random.uniform(12, 48),
+        "guest": np.random.uniform(1, 4),
+        "tv": np.random.uniform(168, 720),  # 7–30 days
+        "server": np.random.uniform(24, 72)
+    }
+    noise = np.random.normal(0, 1)
+    return round(base[row["device_type"]] + row["session_hours"] * 0.5 + row["login_freq_per_day"] * 0.8 + noise, 2)
+
+df["lease_time"] = df.apply(assign_lease, axis=1)
+df.head()
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+
+X = df[["device_type", "session_hours", "login_freq_per_day"]]
+y = df["lease_time"]
+
+# One-hot encode device_type
+ct = ColumnTransformer([("device", OneHotEncoder(), ["device_type"])], remainder="passthrough")
+X_transformed = ct.fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(X_transformed, y, test_size=0.2)
+
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Evaluate
+from sklearn.metrics import mean_squared_error, r2_score
+preds = model.predict(X_test)
+
+print("R2 Score:", r2_score(y_test, preds))
+print("MSE:", mean_squared_error(y_test, preds))
+
+sample = pd.DataFrame({
+    "device_type": ["laptop"],
+    "session_hours": [3.5],
+    "login_freq_per_day": [2]
+})
+
+sample_transformed = ct.transform(sample)
+predicted_lease = model.predict(sample_transformed)
+print("Predicted Lease Time (hrs):", predicted_lease[0])
